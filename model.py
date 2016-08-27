@@ -1,8 +1,9 @@
 # coding: utf-8
 import re
 from sqlalchemy import Column, ForeignKey, Integer, Text, text, create_engine
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.ext.declarative import declarative_base
+import numpy as np
 
 Base = declarative_base()
 metadata = Base.metadata
@@ -71,6 +72,47 @@ class Statement(Base):
                 string += ' ' + self.variant2
         return string
 
+class StatementPart(Base):
+    __tablename__ = 'statement_part'
+    id = Column(Integer, primary_key=True)
+    clause_id = Column(ForeignKey(u'raw_clause.id'))
+    part = Column(Text)
+    parent_id = Column(ForeignKey(u'statement_part.id'))
+    # parent = relationship('StatementPart', remote_side=[id])
+    children = relationship('StatementPart',
+                backref=backref('parent', remote_side=[id]))
+
+    def __str__(self):
+        return self.part
+
+    def __repr__(self):
+        return self.part.encode('ascii', 'ignore')
+
+    def shortest_sentence(self):
+        all_children = list(self.yield_children())
+        min_index = np.argmin([len(''.join(a)) for a in all_children])
+        return all_children[min_index]
+
+    def all_sentences(self):
+        return list(self.yield_children())
+
+    def yield_children(self):
+        if len(self.children) == 0:
+            parts = [self.part]
+            par = self.parent
+            while par is not None:
+                parts.append(par.part)
+                par = par.parent
+            parts.reverse()
+            yield parts
+        else:
+            for c in self.children:
+                for path in c.yield_children():
+                    yield path
+
+
+
+
 class Section(Base):
     __tablename__ = 'section'
 
@@ -98,7 +140,7 @@ class Question(Base):
     correct = Column(Integer)
     related_clause = Column(ForeignKey(u'raw_clause.id'))
     type = Column(Integer)
-
+    a_type = Column(Text)
     def get_correct(self):
         if self.correct == 0:
             return self.ans1

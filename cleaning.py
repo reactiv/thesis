@@ -2,7 +2,7 @@ import re
 from bs4 import BeautifulSoup
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
-from model import RawClause, Section, Source, Question, Statement
+from model import RawClause, Section, Source, Question, Statement, StatementPart
 
 __author__ = 'jamesgin'
 engine = create_engine('postgres:///jamesgin')
@@ -48,13 +48,13 @@ def basic_clean_no_links(clause):
     text = re.sub(r'[0-9]', '', text)
     return text
 
-def replace_all_hrefs(soup):
+def replace_all_hrefs(soup, use_gloss_terms=True):
     for a in soup.find_all('a'):
         if a.has_attr('href'):
             possible_id = replace_href(a)
 
             if possible_id:
-                if possible_id in gloss_names:
+                if possible_id in gloss_names and use_gloss_terms:
                     a.replace_with('[{}:{}]'.format(gloss_names[possible_id].encode('ascii', 'ignore'), possible_id))
                 else:
                     a.replace_with('[{}:{}]'.format(a.text.encode('ascii', 'ignore'), possible_id))
@@ -68,60 +68,85 @@ def replace_all_hrefs_text_only(soup):
             a.replace_with('Section')
     return soup
 
+def collect_extras(ols, statements, clause_id):
+    """
+    Traverse the doc until either another OL is found or END
+    :param ols:
+    :return:
+    """
+    sib = ols.next_sibling
+    extra_parts = []
+    while sib is not None and sib.name != 'ol':
+        try:
+            extra_parts.append(sib.text)
+        except:
+            extra_parts.append(str(sib))
+        sib = sib.next_sibling
+
+    end_caps = []
+    if extra_parts:
+        text = clean_sentence(' '.join(extra_parts))
+        if text != '':
+            for s in statements:
+                end_caps.append(StatementPart(clause_id=clause_id, parent=s, part=text))
+
+    return end_caps
+
 def amplify(clause):
     soup = BeautifulSoup(clause.content_html, 'lxml')
-    statements = None
-    soup = replace_all_hrefs(soup)
+
+    soup = replace_all_hrefs(soup, False)
     div = soup.find('div', class_='section-content').find('div')
+    all_statements = None
     if div is not None:
         ols = div.find_all('ol', recursive=False)
-
         if ols:
+            all_statements = []
             for o in ols:
-                if o.previous_sibling is not None:
-                    statements = extract_lis(o, o.previous_sibling, True)
+                statements = extract_lis(o, None, clause.id, True)
+                extras = collect_extras(o, statements, clause.id)
+                all_statements.extend(statements)
+                all_statements.extend(extras)
+
     else:
         pass
 
-    if statements is None:
-        statements = [(soup.text, None, None)]
+    if all_statements is None:
+        all_statements = [StatementPart(clause_id=clause.id, part=clean_sentence(soup.text))]
 
-    return statements
+    return all_statements
 
-def extract_lis(ol, head, recurse=False):
-    head_text = None
-    if hasattr(head, 'text'):
-        head_text = head.text
-    else:
-        sib = head
-        while not hasattr(sib, 'text'):
-            if sib is None:
-                head_text = str(head)
-                break
-            else:
-                sib = sib.previous_sibling
-        if head_text is None:
-            head_text = sib.text
+def extract_lis(ol, parent, clause_id, recurse=False):
+    head_text = ''
+    for c in ol.parent.children:
+        if c == ol or c.name == 'ol':
+            break
+        if hasattr(c, 'text'):
+            head_text += c.text + ' '
+        else:
+            head_text += str(c) + ' '
 
     head_text = clean_sentence(head_text)
+    if head_text != '':
+        head_part = StatementPart(clause_id=clause_id, parent=parent, part=head_text)
+        statements = [head_part]
+    else:
+        head_part = None
+        statements = []
 
     lis = ol.find_all('li', recursive=False)
-    statements = []
     for li in lis:
         if recurse:
             ols = li.find('ol', recursive=False)
             if ols:
-                sub_statements = extract_lis(ols, ols.previous_sibling, False)
-                for s in sub_statements:
-                    # print(s)
-                    # print(sub_statements)
-                    if type(sub_statements) == list:
-                        pass
-                    statements.append([head_text, clean_sentence(s)])
+                sub_statements = extract_lis(ols, head_part, clause_id, False)
+                statements.extend(sub_statements)
             else:
-                statements.append([head_text, clean_sentence(li.text)])
+                statements.append(StatementPart(clause_id=clause_id,
+                                            parent=head_part, part=clean_sentence(li.text)))
         else:
-            statements.append([head_text, clean_sentence(li.text)])
+            statements.append(StatementPart(clause_id=clause_id,
+                                            parent=head_part, part=clean_sentence(li.text)))
 
 
     return statements
@@ -133,22 +158,37 @@ def amplify_all():
     for c in clauses:
         statements = amplify(c)
         for s in statements:
-            filt = [st for st in s if st is not None and st.strip() != '']
-            filt = filt + [None] * 3
-            # session.add(Statement(clause_id=c.id, head=filt[0], variant1=filt[1], variant2=filt[2]))
-
+            if s.part != 'deleted':
+                session.add(s)
         i += 1
         if i % 100 == 0:
-            # session.commit()
+            session.commit()
             print(i/n)
 
-def edit_group(group):
+def edit_sq_group(group):
     txt = group.group(1)
     if ':' in txt:
-        return txt[:txt.index(':')]
-    else:
-        return txt
+        txt = txt[:txt.index(':')]
 
+    if '.' in txt:
+        txt = txt.replace(' ', '')
+
+    return txt
+
+def edit_round_group(group):
+    txt = group.group(1)
+    if len(txt) > 5:
+        return txt
+    else:
+        return ''
+
+def pre_spacer(group):
+    txt = group.group()
+    return txt[0] + ' ['
+
+def post_spacer(group):
+    txt = group.group()
+    return '] ' + txt[1]
 
 def clean_sentence(sent_text):
     """
@@ -156,11 +196,17 @@ def clean_sentence(sent_text):
     :param sent_text:
     :return:
     """
-    print(sent_text)
-    txt = re.sub(r'\[[0-9]+\]', '', sent_text)
-    txt = re.sub(r'\([^)]*\)', '', txt)
-    txt = re.sub(r'\[(.*?)\]', edit_group, txt)
+    # print(sent_text)
+    txt = sent_text.replace('\r\n', ' ').replace('\n', ' ')
+    txt = re.sub(r'\s\.', '.', txt)
+    txt = re.sub(r'\s\,', ',', txt)
+    txt = re.sub(r'\[[0-9]+\]', '', txt)
+    txt = re.sub(r'[^\s]\[', pre_spacer, txt)
+    txt = re.sub(r'\][^\s]', post_spacer, txt)
+    txt = re.sub(r'\((.*?)\)', edit_round_group, txt)
+    txt = re.sub(r'\[(.*?)\]', edit_sq_group, txt)
     txt = txt.strip()
+    # print(txt)
     return txt
 
 
@@ -291,7 +337,13 @@ def fix_duplicate_questions():
 
 
 if __name__ == '__main__':
-    amplify_all()
+    clause = session.query(RawClause).filter(RawClause.id == 33355).first()
+    amps = amplify(clause)
+    for a in amps:
+        print a
+    #
+    # print(clean_sentence(clause[0]))
+    # amplify_all()
     # basic_clean_no_links_all()
     # clause = session.query(RawClause).filter(RawClause.id == 56438).first()
     #
