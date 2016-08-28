@@ -169,6 +169,54 @@ class Question(Base):
                         ReifiedSubQuestion(self.num4, 3 in parts)]
             return subqs
 
+class EntityQuestion(Base):
+    __tablename__ = 'entity_question'
+
+
+    id = Column(Integer, primary_key=True)
+    question_id = Column(ForeignKey(u'question.id'))
+    source = Column(Text)
+    body = Column(Text)
+    num1 = Column(Text)
+    num2 = Column(Text)
+    num3 = Column(Text)
+    num4 = Column(Text)
+    ans1 = Column(Text)
+    ans2 = Column(Text)
+    ans3 = Column(Text)
+    ans4 = Column(Text)
+    correct = Column(Integer)
+    related_clause = Column(ForeignKey(u'raw_clause.id'))
+    type = Column(Integer)
+    a_type = Column(Text)
+    def get_correct(self):
+        if self.correct == 0:
+            return self.ans1
+        elif self.correct == 1:
+            return self.ans2
+        elif self.correct == 2:
+            return self.ans3
+        elif self.correct == 3:
+            return self.ans4
+
+    def text(self):
+        return self.body + '. ' + self.get_correct()
+
+    def all_answers(self):
+        return [self.ans1, self.ans2, self.ans3, self.ans4]
+
+    def reify(self):
+        if self.num1 is not None:
+            # decode the correct answer
+            corr = self.get_correct()
+            parts = corr.split(' ')
+            parts = [numerals.index(p) for p in parts if p not in ['and', '&']]
+            subqs = [ReifiedSubQuestion(self.num1, 0 in parts),
+                        ReifiedSubQuestion(self.num2, 1 in parts),
+                        ReifiedSubQuestion(self.num3, 2 in parts),
+                        ReifiedSubQuestion(self.num4, 3 in parts)]
+            return subqs
+
 
 if __name__ == '__main__':
     engine = create_engine('postgres:///jamesgin')

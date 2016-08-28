@@ -8,8 +8,7 @@ from sklearn.metrics import confusion_matrix
 from matplotlib import pyplot as plt
 from nltk.tokenize import TreebankWordTokenizer
 from sklearn.neighbors import KNeighborsClassifier, NearestNeighbors
-
-
+from cleaning import clean_sentence
 
 __author__ = 'jamesgin'
 import dbconn
@@ -51,7 +50,7 @@ def generate_section_set(max_df):
     print('{} Generated'.format(len(ys)))
     return tfidf, ys, cv
 
-@memory.cache
+# @memory.cache
 def generate_clause_set(yfunc, max_df):
     print('Generating Clause Set')
     all_sections = session.query(Section).filter(Section.source_id.isnot(None))
@@ -81,6 +80,78 @@ def generate_statement_set():
     for s in statements:
         if s.text() is not None:
             docs.append(s.text())
+    print('{} Docs'.format(len(docs)))
+    tfidf = cv.fit_transform(docs)
+
+    print('Generated')
+    return tfidf, docs, cv
+
+@memory.cache
+def get_all_statements():
+    docs = []
+    parts = session.query(StatementPart, RawClause, Section).join(RawClause).join(Section).filter((StatementPart.parent_id.is_(None))).order_by(StatementPart.id)
+    tot = float(parts.count())
+    i = 0
+    for statement, clause, section in parts:
+        for shortest in statement.all_sentences():
+            sent = fix_multipart_sentence(shortest)
+            sent = sent.replace(u'\u2019', "'")
+            docs.append(sent)
+            i+=1
+            if i%1000 == 0:
+                print(i/tot)
+    return docs
+
+@memory.cache
+def get_dataset(level, extractor):
+    def null_to_str(header, cleaned):
+        str = ''
+        if header:
+            str += header + '. '
+        if cleaned:
+            str += cleaned
+        return str
+
+    docs = []
+    if level == 'clause':
+        # docs = list(session.query(RawClause.header, RawClause.cleaned, Section).join(Section).filter(RawClause.content_html.notilike('%<table%')
+        #                                                                                              & RawClause.content_html.notilike('deleted')
+        #                                                                                              & Section.source_id.isnot(None)))
+        # # docs = list(session.query(RawClause.cleaned).distinct()) + list(session.query(RawClause.header).distinct())
+        # docs = [null_to_str(d[0], d[1]) for d in docs if d]
+        all_sections = session.query(Section).filter(Section.source_id.isnot(None))
+        docs = []
+
+        for s in all_sections:
+            for c in s.clauses:
+                if c.cleaned is not None and 'deleted' not in c.cleaned.lower():
+                    docs.append(c.header)
+                    docs.append(c.cleaned)
+        # return docs
+
+    else:
+        docs = get_all_statements()
+
+    docs = [clean_sentence(s, extractor) for s in docs]
+    return docs
+
+
+@memory.cache
+def generate_statement_from_parts_set():
+    print('Generating Statement Set')
+    cv = TfidfVectorizer(token_pattern=r'(?u)\b[a-zA-Z]{2,}\b', stop_words=eng_stop)
+    docs = []
+    statements = session.query(StatementPart, RawClause, Section).join(RawClause).join(Section).filter((StatementPart.parent_id.is_(None))).order_by(StatementPart.id)
+    tot = float(statements.count())
+    i = 0
+    for statement, clause, section in statements:
+        for shortest in statement.all_sentences():
+            sent = fix_multipart_sentence(shortest)
+            sent = sent.replace(u'\u2019', "'")
+            docs.append(sent)
+        i += 1
+        if i % 100 == 0:
+            print i / tot
     print('{} Docs'.format(len(docs)))
     tfidf = cv.fit_transform(docs)
 
@@ -182,9 +253,6 @@ def get_section_name(section, clause):
         return section.docpath
 
 
-def generate_features():
-    pass
-
 def generate_qa_set(tfidf, yfunc):
     questions = session.query(Question, RawClause, Section)\
         .join(RawClause).filter(RawClause != None).filter(RawClause.id != 54488).join(Section)
@@ -197,6 +265,37 @@ def generate_qa_set(tfidf, yfunc):
     X = tfidf.transform(docs)
     y = np.array(ys)
     return X, y
+
+def clip_end(part):
+    for i in [';', ' ;', '; and', '; or']:
+        if part.endswith(i):
+            part = part[:-len(i)]
+
+    return part
+
+def fix_multipart_sentence(sentence):
+    sentence = [clip_end(p).strip() for p in sentence]
+    sent_string = ' '.join(sentence)
+    if not sent_string.endswith('.'):
+        sent_string += '.'
+    return sent_string
+
+@memory.cache
+def get_tfidf(level, extractor):
+    docs = get_dataset(level, extractor)
+    cv = TfidfVectorizer(token_pattern=r'(?u)\b[a-zA-Z]{2,}\b', stop_words=eng_stop)
+    vecs = cv.fit_transform(docs)
+    return cv, vecs
+
+@memory.cache
+def get_w2v(level, extractor, **kwargs):
+    docs = get_dataset(level, extractor)
+    sents = []
+    for d in docs:
+        sents.extend(re.split(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s', d))
+    tok_sents = [tokenise(s) for s in sents]
+    w2v = Word2Vec(tok_sents, **kwargs)
+    return w2v, [get_doc_vec(w2v, s) for s in sents]
 
 
 if __name__ == '__main__':

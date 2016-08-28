@@ -75,6 +75,7 @@ def questions_checker(output_file_name, for_parser):
             file_for_parser.writelines(parser_lines)
 
 def statement_checker(output_file_name, for_parser):
+    nlp = spacy.load('en')
     statements = session.query(StatementPart, RawClause, Section).join(RawClause).join(Section).filter((StatementPart.parent_id.is_(None))
                                                                          & (Section.docpath.like('COBS%'))
                                                                          & (RawClause.content_html.notilike('%<table%'))).order_by(StatementPart.id)

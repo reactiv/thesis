@@ -2,7 +2,7 @@ import re
 from bs4 import BeautifulSoup
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
-from model import RawClause, Section, Source, Question, Statement, StatementPart
+from model import RawClause, Section, Source, Question, Statement, StatementPart, EntityQuestion
 
 __author__ = 'jamesgin'
 engine = create_engine('postgres:///jamesgin')
@@ -21,9 +21,21 @@ def get_gloss_text():
     #     names[n] = names[n].replace(' ', '')
     return names
 
+def get_entities():
+    names = dict(session.query(RawClause.id, RawClause.name).filter(RawClause.url != None).all())
+    for n in names:
+        names[n] = names[n].replace(' ', '')
+    return names
+
+def get_coref():
+    names = dict(session.query(RawClause.id, RawClause.header).filter((RawClause.section_id != 5174)).all())
+    return names
+
 gloss_tags = get_gloss_tags()
 gloss_names = get_gloss_text()
 ref_tags = get_section_ref_ids()
+entities = get_entities()
+corefs = get_coref()
 
 def get_clauses():
     # get clauses which have html
@@ -46,20 +58,36 @@ def basic_clean_no_links(clause):
     text = text.replace('\r\n', ' ')
     text = text.replace('\n', ' ')
     text = re.sub(r'[0-9]', '', text)
-    return text
+    return text.strip()
 
-def replace_all_hrefs(soup, use_gloss_terms=True):
+def replace_all_hrefs(soup, gloss_names=None, coref=None):
     for a in soup.find_all('a'):
         if a.has_attr('href'):
             possible_id = replace_href(a)
 
             if possible_id:
-                if possible_id in gloss_names and use_gloss_terms:
+                if gloss_names and possible_id in gloss_names:
                     a.replace_with('[{}:{}]'.format(gloss_names[possible_id].encode('ascii', 'ignore'), possible_id))
                 else:
                     a.replace_with('[{}:{}]'.format(a.text.encode('ascii', 'ignore'), possible_id))
             else:
                 a.replace_with('[{}]'.format(a.text.encode('ascii', 'ignore')))
+    return soup
+
+def replace_all_hrefs_text(soup, gloss_names=None, coref=None):
+    for a in soup.find_all('a'):
+        if a.has_attr('href'):
+            possible_id = replace_href(a)
+
+            if possible_id:
+                if gloss_names and possible_id in gloss_names:
+                    a.replace_with(gloss_names[possible_id].encode('ascii', 'ignore'))
+                elif coref and possible_id in coref:
+                    a.replace_with(coref[possible_id])
+                else:
+                    a.replace_with(a.text.encode('ascii', 'ignore'))
+            else:
+                a.replace_with(a.text.encode('ascii', 'ignore'))
     return soup
 
 def replace_all_hrefs_text_only(soup):
@@ -107,12 +135,11 @@ def amplify(clause):
                 extras = collect_extras(o, statements, clause.id)
                 all_statements.extend(statements)
                 all_statements.extend(extras)
-
     else:
         pass
 
     if all_statements is None:
-        all_statements = [StatementPart(clause_id=clause.id, part=clean_sentence(soup.text))]
+        all_statements = [StatementPart(clause_id=clause.id, part=clean_sentence(soup.text, None))]
 
     return all_statements
 
@@ -126,7 +153,7 @@ def extract_lis(ol, parent, clause_id, recurse=False):
         else:
             head_text += str(c) + ' '
 
-    head_text = clean_sentence(head_text)
+    head_text = clean_sentence(head_text, None)
     if head_text != '':
         head_part = StatementPart(clause_id=clause_id, parent=parent, part=head_text)
         statements = [head_part]
@@ -143,10 +170,10 @@ def extract_lis(ol, parent, clause_id, recurse=False):
                 statements.extend(sub_statements)
             else:
                 statements.append(StatementPart(clause_id=clause_id,
-                                            parent=head_part, part=clean_sentence(li.text)))
+                                            parent=head_part, part=clean_sentence(li.text, None)))
         else:
             statements.append(StatementPart(clause_id=clause_id,
-                                            parent=head_part, part=clean_sentence(li.text)))
+                                            parent=head_part, part=clean_sentence(li.text, None)))
 
 
     return statements
@@ -170,9 +197,47 @@ def edit_sq_group(group):
     if ':' in txt:
         txt = txt[:txt.index(':')]
 
-    if '.' in txt:
-        txt = txt.replace(' ', '')
+    # if '.' in txt:
+    #     txt = txt.replace(' ', '')
 
+    return txt
+
+def extract_entities(group):
+    txt = group.group(1)
+    if ':' in txt:
+        try:
+            id = int(txt[txt.index(':')+1:])
+            if id in entities:
+                return entities[id]
+        except:
+            pass
+        txt = txt[:txt.index(':')]
+    return txt
+
+def reference(group):
+    txt = group.group(1)
+    if ':' in txt:
+        try:
+            id = int(txt[:txt.index(':')+1])
+            if id in corefs:
+                return corefs[id]
+        except:
+            pass
+        txt = txt[:txt.index(':')]
+    return txt
+
+def entity_and_reference(group):
+    txt = group.group(1)
+    if ':' in txt:
+        try:
+            id = int(txt[:txt.index(':')+1])
+            if id in corefs:
+                return corefs[id]
+            if id in entities:
+                return entities[id]
+        except:
+            pass
+        txt = txt[:txt.index(':')]
     return txt
 
 def edit_round_group(group):
@@ -190,24 +255,30 @@ def post_spacer(group):
     txt = group.group()
     return '] ' + txt[1]
 
-def clean_sentence(sent_text):
+
+def clean_sentence(sent_text, entity_extraction=edit_sq_group):
     """
     Remove numerical references, brackets etc.
     :param sent_text:
     :return:
     """
     # print(sent_text)
-    txt = sent_text.replace('\r\n', ' ').replace('\n', ' ')
-    txt = re.sub(r'\s\.', '.', txt)
-    txt = re.sub(r'\s\,', ',', txt)
-    txt = re.sub(r'\[[0-9]+\]', '', txt)
-    txt = re.sub(r'[^\s]\[', pre_spacer, txt)
-    txt = re.sub(r'\][^\s]', post_spacer, txt)
-    txt = re.sub(r'\((.*?)\)', edit_round_group, txt)
-    txt = re.sub(r'\[(.*?)\]', edit_sq_group, txt)
-    txt = txt.strip()
-    # print(txt)
-    return txt
+    if sent_text:
+        txt = sent_text.replace('\r\n', ' ').replace('\n', ' ')
+        txt = re.sub(r'\s\.', '.', txt)
+        txt = re.sub(r'\s\,', ',', txt)
+        txt = re.sub(r'\[[0-9]+\]', '', txt)
+        txt = re.sub(r'[^\s]\[', pre_spacer, txt)
+        txt = re.sub(r'\][^\s]', post_spacer, txt)
+        txt = re.sub(r'\((.*?)\)', edit_round_group, txt)
+        if entity_extraction:
+            txt = re.sub(r'\[(.*?)\]', entity_extraction, txt)
+        txt = txt.strip()
+        # print(txt)
+        return txt
+    else:
+        return ''
+
 
 
 def replace_href(tag):
@@ -335,12 +406,43 @@ def fix_duplicate_questions():
     session.commit()
     print('{} deleted'.format(count))
 
+def entity_questions():
+    questions = session.query(Question)
+    for q in questions:
+
+        body = replace_entities(q.body, max_length=4)
+        a1 = replace_entities(q.ans1, max_length=4)
+        a2 = replace_entities(q.ans2, max_length=4)
+        a3 = replace_entities(q.ans3, max_length=4)
+        a4 = replace_entities(q.ans4, max_length=4)
+
+        eq = EntityQuestion(body=body, ans1=a1, ans2=a2, ans3=a3, ans4=a4, type=q.type, correct=q.correct, question_id=q.id)
+        session.add(eq)
+    session.commit()
+
+def replace_entities(string, max_length):
+    string = string.lower()
+    tokens = string.split(' ')
+    ents = session.query(RawClause.name).filter(RawClause.url != None).all()
+    ents = {e[0].replace(' ', '') for e in ents}
+    for i in range(len(tokens)-max_length):
+        seg = tokens[i:i+max_length]
+        for j in range(max_length, 1, -1):
+            candidate = ''.join(seg[:j])
+            if candidate in ents:
+                print(candidate)
+                string = string.replace(' '.join(seg[:j]), candidate)
+                break
+    return string
 
 if __name__ == '__main__':
-    clause = session.query(RawClause).filter(RawClause.id == 33355).first()
-    amps = amplify(clause)
-    for a in amps:
-        print a
+    replace_entities(u'Alternative investment fund manager directive', 4)
+    entity_questions()
+    # add_coref_all()
+    # clause = session.query(RawClause).filter(RawClause.id == 33355).first()
+    # amps = amplify(clause)
+    # for a in amps:
+    #     print a
     #
     # print(clean_sentence(clause[0]))
     # amplify_all()

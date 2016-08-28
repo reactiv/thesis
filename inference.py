@@ -251,10 +251,10 @@ def get_y_vector(questions):
     return y
 
 
-@memory.cache
+# @memory.cache
 def get_w2v(size, a, iters):
     sents = generate_sentences()
-    w2v = Word2Vec(sents, size, alpha=a, sg=0, iter=iters, workers=8, sample=0)
+    w2v = Word2Vec(sents, size=size, alpha=a, sg=0, iter=iters, workers=8, sample=0)
     return w2v
 
 if __name__ == '__main__':
@@ -263,33 +263,33 @@ if __name__ == '__main__':
                                                # (Question.related_clause != 54488))
         # .order_by(Question.id.desc())
     # X, y, tfidf = generate_section_set(1)
-    # X, y, tfidf = generate_clause_set(get_clause_id, 1)
-    X, docs, tfidf = generate_statement_set()
-    for i in range(1,30,2):
-        nn_investigate(i, tfidf, X, docs, questions)
+    X, y, tfidf = generate_clause_set(get_clause_id, 1)
+    # X, docs, tfidf = generate_statement_set()
+    # for i in range(1,30,2):
+    #     nn_investigate(i, tfidf, X, docs, questions)
     # nn_test(1, tfidf, X, questions)
     # tfidf_discrim_test(tfidf, X, questions)
     # for i in range(1,7):
     #     nn_test(i, tfidf, X, questions)
     # sents = generate_sentences()
-    # for i in [100]:
-    #     for a in [0.025]:
-    #         for iters in [1]:
-    #             print(i, a)
-    #             w2v = get_w2v(i, a, 80)
-    #             docs = generate_w2v_corpus(w2v)
-    #             w2v_sim_test(w2v)
-                #
-                # print(w2v.most_similar('client'))
+    for i in [100]:
+        for a in [0.025]:
+            for iters in [1]:
+                print(i, a)
+                w2v = get_w2v(i, a, 80)
+                docs = generate_w2v_corpus(w2v)
+                w2v_sim_test(w2v)
 
-                # cross_val_questions(questions, ExtraTreesClassifier(100), tfidf, w2v, [0, 0.01, 0.05, 0.25, 0.5, 0.75, 1], 10)
-                # cross_val_questions(questions, ExtraTreesClassifier(2000), 8)
-                # w2v_discrim_test(w2v, questions)
-                # for j in [1,3,5,7,9]:
-                #     nn_test_w2v(j,w2v,docs,questions)
-                # vecs = generate_w2v_clause_vecs(w2v)
-                # for j in range(1, 10):
-                #     w2v_test(j, w2v, vecs, questions)
+                print(w2v.most_similar('client'))
+
+                cross_val_questions(questions, ExtraTreesClassifier(100), tfidf, w2v, [0, 0.01, 0.05, 0.25, 0.5, 0.75, 1], 10)
+                cross_val_questions(questions, ExtraTreesClassifier(2000), 8)
+                w2v_discrim_test(w2v, questions)
+                for j in [1,3,5,7,9]:
+                    nn_test_w2v(j,w2v,docs,questions)
+                vecs = generate_w2v_clause_vecs(w2v)
+                for j in range(1, 10):
+                    w2v_test(j, w2v, vecs, questions)
     # # # pass
     # # # for i in [0.025, 0.05]:
     # # #     X, y, tfidf = generate_section_set(i)
