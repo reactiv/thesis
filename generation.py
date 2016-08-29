@@ -4,6 +4,7 @@ from scipy.sparse import vstack, hstack
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
+from cleaning import entity_and_reference, condense_ref
 from inference import get_w2v
 
 __author__ = 'jamesgin'
@@ -74,10 +75,11 @@ def questions_checker(output_file_name, for_parser):
             file_with_reference.writelines(lines)
             file_for_parser.writelines(parser_lines)
 
-def statement_checker(output_file_name, for_parser):
+def statement_checker(output_file_name, for_parser, extractor):
     nlp = spacy.load('en')
     statements = session.query(StatementPart, RawClause, Section).join(RawClause).join(Section).filter((StatementPart.parent_id.is_(None))
-                                                                         & (Section.docpath.like('COBS%'))
+                                                                         # & (Section.docpath.like('COBS%'))
+                                                                         & (Section.id == 2926) # .in_(range(2961, 2969))) #
                                                                          & (RawClause.content_html.notilike('%<table%'))).order_by(StatementPart.id)
     with open(output_file_name, 'wb') as file_with_reference:
         with open(for_parser, 'wb') as file_for_parser:
@@ -90,11 +92,19 @@ def statement_checker(output_file_name, for_parser):
                 for shortest in statement.all_sentences():
                     sent = fix_multipart_sentence(shortest)
                     sent = sent.replace(u'\u2019', "'")
+                    if 'should present the information referred to in' in sent:
+                        pass
+                    sent = clean_sentence(sent, extractor)
                     doc = nlp(sent)
+
                     for s in doc.sents:
-                        print(str(s))
-                        lines.append('{},{}\n'.format(statement.id, str(s)))
-                        parser_lines.append(str(s) + '\n')
+                        cleaned = str(s).replace(':', '')
+                        if 'deleted' not in cleaned.lower() and 'Note ]' not in cleaned:
+                            # if cleaned.startswith("If  a communication relates to a firm's business that is not"):
+                            #     cleaned = clean_sentence(str(s), extractor)
+                            print(cleaned)
+                            lines.append('{},{}\n'.format(statement.id, cleaned))
+                            parser_lines.append(cleaned + '\n')
                 # print(clause.header)
                 # print(section.name)
             file_with_reference.writelines(lines)
@@ -295,49 +305,55 @@ def sanity_check(no_wrong, qs, answers, concatenated, header_context):
     return X, y
 
 if __name__ == '__main__':
-    context = load_additional_context()
-    _, _, tfidf = generate_clause_set(get_clause_id, 1)
+    # statement_checker('ref_perf.txt', 'to_parser_perf.txt', condense_ref)
+    # statement_checker('ref_suitability.txt', 'to_parser_suitability.txt', condense_ref)
+    # statement_checker('ref_colon.txt', 'to_parser_colon.txt', condense_ref)
+    statement_checker('ref_perf_colon.txt', 'to_parser_perf_colon.txt', condense_ref)
 
-    q = "A firm must ensure that information that contains an indication of past performance of relevant business , a relevant investment or a financial index , satisfies the following conditions : the information includes appropriate performance information which covers at least the immediately preceding how many years , or the whole period for which the investment has been offered , the financial index has been established , or the service has been provided if less than five years , or such longer period as the firm may decide , and in every case that performance information must be based on and show complete 12-month periods ?"
-    t_a = "at least the immediately preceding five years , or the whole period for which the investment has been offered"
-    f_a = "at least the immediately preceding ten years , or the whole period for which the investment has been offered"
 
-    q2 = 'A firm must ensure that information that contains an indication of past performance of relevant business , a relevant investment , a structured deposit or a financial index , satisfies the following conditions : it discloses the effect of commissions , fees or other charges if the indication is based on which of the following ?'
-    t2_a = 'gross performance'
-    f2_a = 'net performance'
-
-    q3 = "A firm must ensure that information that contains an indication of past performance of relevant business , a relevant investment or a financial index , satisfies which of the following?"
-    t3_a = 'the following conditions : the reference period and the source of information are clearly stated'
-    f3_a = 'the following conditions : the reference period and the source of information are unclearly stated'
-
-    # tfidf.fit_transform([q + ' ' + t_a, q + ' ' + f_a,
-    #                              q2 + ' ' + t2_a, q2 + ' ' + f2_a,
-    #                              q3 + ' ' + t3_a, q3 + ' ' + f3_a])
+    # context = load_additional_context()
+    # _, _, tfidf = generate_clause_set(get_clause_id, 1)
     #
-
-
-
-
-    qs = pd.read_csv('generated_qs.csv')
-    # for a in qs['2']:
-    #     print(a)
-    # qs = qs[(qs['2'].str.split().apply(len) > 1)]
-    tfidf.fit_transform((qs['1'] + ' ' + qs['2']).as_matrix())
-
-    answers = qs['2'].fillna('')
-    for no_wrong in [1]:
-        # X, y = get_vecs(no_wrong, qs, answers, concatenated=True, header_context=False)
-        X, y = get_vecs_no_gen(qs, concatenated=True, header_context=False)
-        # X, y = sanity_check(no_wrong, qs, answers, concatenated=True, header_context=False)
-        # questions = session.query(Question).filter((Question.id.in_([695, 724, 659, 413, 332])))
-        # tfidf_test(tfidf, X, y, questions, True)
-        questions = session.query(Question).filter((Question.type.is_(None))).all()
-        et = tfidf_test(tfidf, X, y, questions, True)
-        X_test, y_test = get_test_vecs(tfidf, questions, True)
-        proba = et.predict_proba(X_test)
-        pass
-    # statement_checker('ref_all.txt', 'to_parser_all.txt')
-    # questions_checker('q_ref.txt', 'q_to_parser.txt')
-    # question_cluster()
-    # ibm = get_ibm_model3()
-    # semi_sup()
+    # q = "A firm must ensure that information that contains an indication of past performance of relevant business , a relevant investment or a financial index , satisfies the following conditions : the information includes appropriate performance information which covers at least the immediately preceding how many years , or the whole period for which the investment has been offered , the financial index has been established , or the service has been provided if less than five years , or such longer period as the firm may decide , and in every case that performance information must be based on and show complete 12-month periods ?"
+    # t_a = "at least the immediately preceding five years , or the whole period for which the investment has been offered"
+    # f_a = "at least the immediately preceding ten years , or the whole period for which the investment has been offered"
+    #
+    # q2 = 'A firm must ensure that information that contains an indication of past performance of relevant business , a relevant investment , a structured deposit or a financial index , satisfies the following conditions : it discloses the effect of commissions , fees or other charges if the indication is based on which of the following ?'
+    # t2_a = 'gross performance'
+    # f2_a = 'net performance'
+    #
+    # q3 = "A firm must ensure that information that contains an indication of past performance of relevant business , a relevant investment or a financial index , satisfies which of the following?"
+    # t3_a = 'the following conditions : the reference period and the source of information are clearly stated'
+    # f3_a = 'the following conditions : the reference period and the source of information are unclearly stated'
+    #
+    # # tfidf.fit_transform([q + ' ' + t_a, q + ' ' + f_a,
+    # #                              q2 + ' ' + t2_a, q2 + ' ' + f2_a,
+    # #                              q3 + ' ' + t3_a, q3 + ' ' + f3_a])
+    # #
+    #
+    #
+    #
+    #
+    # qs = pd.read_csv('generated_qs.csv')
+    # # for a in qs['2']:
+    # #     print(a)
+    # # qs = qs[(qs['2'].str.split().apply(len) > 1)]
+    # tfidf.fit_transform((qs['1'] + ' ' + qs['2']).as_matrix())
+    #
+    # answers = qs['2'].fillna('')
+    # for no_wrong in [1]:
+    #     # X, y = get_vecs(no_wrong, qs, answers, concatenated=True, header_context=False)
+    #     X, y = get_vecs_no_gen(qs, concatenated=True, header_context=False)
+    #     # X, y = sanity_check(no_wrong, qs, answers, concatenated=True, header_context=False)
+    #     # questions = session.query(Question).filter((Question.id.in_([695, 724, 659, 413, 332])))
+    #     # tfidf_test(tfidf, X, y, questions, True)
+    #     questions = session.query(Question).filter((Question.type.is_(None))).all()
+    #     et = tfidf_test(tfidf, X, y, questions, True)
+    #     X_test, y_test = get_test_vecs(tfidf, questions, True)
+    #     proba = et.predict_proba(X_test)
+    #     pass
+    # # statement_checker('ref_all.txt', 'to_parser_all.txt')
+    # # questions_checker('q_ref.txt', 'q_to_parser.txt')
+    # # question_cluster()
+    # # ibm = get_ibm_model3()
+    # # semi_sup()

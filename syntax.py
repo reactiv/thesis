@@ -206,7 +206,7 @@ def get_refs():
 
 # @memory.cache
 def check_parsey_output():
-    all_parsed = open('out_all.conll', 'rb').read().decode('ascii', 'ignore').split('\n\n')
+    all_parsed = open('out_perf_colon.conll', 'rb').read().decode('ascii', 'ignore').split('\n\n')
     all_sents = []
     # refs = get_refs()
     for a in all_parsed:
@@ -456,8 +456,9 @@ def get_triples_nested(root, key, filt=[]):
     all_children = _get_children(root, key)
     all_children = sorted(all_children, key=lambda k: k.index)
     children = recurse_triples(root, key)
-    # pprint.pprint(children)
-    analyse_triples(children[1])
+    pprint.pprint(children)
+    get_candidate_answers(children[1])
+    # analyse_triples(children[1])
     return children
 
 def get_name(dep):
@@ -470,9 +471,9 @@ def get_name(dep):
     elif dep in ['csubj', 'csubjpass']:
         return 'csubj'
     elif dep in ['neg', 'cop', 'aux', 'auxpass', 'advcl',
-                 'parataxis', 'dep', 'rcmod', 'nn', 'conj', 'num', 'mark']:
+                 'parataxis', 'dep', 'nn', 'conj', 'num', 'mark']:
         return dep
-    elif dep in ['ccomp', 'xcomp']:
+    elif dep in ['ccomp', 'xcomp', 'rcmod']:
         return 'clause'
     elif dep in ['prep']:
         return 'prep'
@@ -543,7 +544,7 @@ def preprocess_conj(root, key):
 
 def recurse_triples(root, key):
     string = get_string_from_root(root, key)
-    if key.word == 'relevant':
+    if key.word == 'information':
         pass
     if not is_valid_triple(key, root[key]):
         string = get_string_from_root(root, key)
@@ -589,8 +590,8 @@ def is_valid_triple(key, children):
         clausal = True
     elif all(a in parts for a in ['cop', 'subject']):
         copular = True
-    # elif all(a in parts for a in ['object']):
-    #     obligation = True
+    elif all(a in parts for a in ['clause']):
+        obligation = True
     elif all(a in parts for a in ['subject', 'prep']):
         other = True
     elif all(a in parts for a in ['dep']):
@@ -1021,6 +1022,30 @@ def describe_questions():
     df = pd.DataFrame(tups, columns=['body', 'wh-word', 'corr_answer', 'a_type'])
     pass
 
+def _get_children(node, k):
+    if len(node[k]) == 0:
+        return [k]
+    else:
+        return [k] + list(chain.from_iterable([_get_children(node[k], c) for c in node[k].keys()]))
+
+def _get_triple(item, k):
+    if type(item) == dict: #is a triple
+        return list(chain.from_iterable([_get_triple(item[c], c) for c in item.keys()]))
+    elif type(item) == tuple: #is a root
+        if item[0].dep in ['num']:
+            return [item[1]]
+    elif type(item) == unicode: #is a string
+        if k in ['num', 'advcl']:
+            return [item]
+    elif type(item) == list: #is a conj list
+        return list(chain.from_iterable([_get_triple(i, k) for i in item]))
+    return []
+
+
+
+def get_candidate_answers(triple):
+    bits = list(chain.from_iterable([_get_triple(triple[c], c) for c in triple]))
+    pass
 
 if __name__ == '__main__':
     # describe_questions()
@@ -1028,6 +1053,7 @@ if __name__ == '__main__':
     output = check_parsey_output()
     print(output['root'].value_counts())
     ensures = output[output['pos'] == 'VERB']
+
     # ensures = output
     qs = []
     errs = 0
@@ -1036,7 +1062,7 @@ if __name__ == '__main__':
         # ref = row['refs']
         tr = asciitree.LeftAligned()
         # print(get_string_from_root(d, d.keys()[0]))
-        # print(tr(d))
+        print(tr(d))
         # rules_s_o_v(d, True)
         # get_numeric(d)
         get_triples_nested(d, d.keys()[0])

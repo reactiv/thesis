@@ -146,8 +146,8 @@ def discrim_w2v_test(questions, level, extractor):
     w2v, _ = get_w2v(level, extractor, size=100, alpha=0.025, sg=0, iter=80, workers=8, sample=0)
     transformer = partial(word2vec_transformer, w2v, True)
     cls = RandomForestClassifier(n_estimators=1000, verbose=1, n_jobs=-1)
-    cls = LogisticRegressionCV(scoring='roc_auc')
-    result = discrim_method(transformer, questions, cls, 20)
+    # cls = LogisticRegressionCV(scoring='roc_auc')
+    result = discrim_method(transformer, questions, cls, 10)
     logger.info(result)
 
 def discrim_blended_test(questions, level, extractor):
@@ -156,17 +156,15 @@ def discrim_blended_test(questions, level, extractor):
     tfidf, _ = get_tfidf(level, extractor)
     # w2v = get_w2v(100, 0.025, 80)
     w2v, _ = get_w2v(level, extractor, size=100, alpha=0.025, sg=0, iter=80, workers=8, sample=0)
-    for alpha in np.linspace(0,1,6):
+    for alpha in np.linspace(0,1,3):
         transformer = partial(blended_transformer, w2v, tfidf, True, alpha)
-        # cls = RandomForestClassifier(n_estimators=1000, n_jobs=-1)
+        cls = RandomForestClassifier(n_estimators=3000, n_jobs=-1)
         cls = LogisticRegressionCV(scoring='roc_auc')
         result = discrim_method(transformer, questions, cls, 10)
         logger.info((alpha, result))
 
-
-
-
-
+def encode_for_keras(questions, level, extractor):
+    logger.info('')
 
 
 if __name__ == '__main__':
@@ -178,6 +176,7 @@ if __name__ == '__main__':
     # ir_tfidf_test_clauses(entity_questions, 'statement', extract_entities)
     # ir_tfidf_test_clauses(questions, 'statement', reference)
     # ir_tfidf_test_clauses(questions, 'statement', entity_and_reference)
+    # ir_tfidf_test_clauses(entity_questions, 'statement', entity_and_reference)
     # ir_tfidf_test_clauses(entity_questions, 'statement', entity_and_reference)
     # ir_tfidf_test_clauses(questions, 'clause', edit_sq_group)
     # ir_tfidf_test_clauses(questions, 'clause', extract_entities)
@@ -194,7 +193,8 @@ if __name__ == '__main__':
     # ir_w2v_test(questions, 'clause', entity_and_reference)
     # ir_w2v_test_old(questions)
     # discrim_tfidf_test(questions)
-    # discrim_w2v_test(questions)
-    discrim_blended_test(questions, 'statement', entity_and_reference)
-    discrim_blended_test(entity_questions, 'statement', entity_and_reference)
+    # discrim_w2v_test(entity_questions, 'statement', entity_and_reference)
+    # discrim_w2v_test(questions, 'statement', reference)
+    # discrim_blended_test(questions, 'statement', entity_and_reference)
+    # discrim_blended_test(entity_questions, 'statement', entity_and_reference)
     # ir_tfidf_test_statements(questions)

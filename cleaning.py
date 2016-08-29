@@ -202,6 +202,26 @@ def edit_sq_group(group):
 
     return txt
 
+def condense_ref(group):
+    txt = group.group(1)
+    if ':' in txt:
+        r_txt = txt[:txt.index(':')]
+
+        try:
+            id = int(txt[txt.index(':')+1:])
+            if id in corefs:
+
+                r_txt = r_txt.replace(' ','')
+        except:
+            pass
+    else:
+        if any(i.isdigit() for i in txt):
+            r_txt = txt.replace(' ','')
+        else:
+            r_txt = txt
+
+    return r_txt
+
 def extract_entities(group):
     txt = group.group(1)
     if ':' in txt:
@@ -218,7 +238,7 @@ def reference(group):
     txt = group.group(1)
     if ':' in txt:
         try:
-            id = int(txt[:txt.index(':')+1])
+            id = int(txt[txt.index(':')+1:])
             if id in corefs:
                 return corefs[id]
         except:
@@ -229,14 +249,14 @@ def reference(group):
 def entity_and_reference(group):
     txt = group.group(1)
     if ':' in txt:
-        try:
-            id = int(txt[:txt.index(':')+1])
-            if id in corefs:
-                return corefs[id]
-            if id in entities:
-                return entities[id]
-        except:
-            pass
+        # try:
+        id = int(txt[txt.index(':')+1:])
+        if id in corefs:
+            return 'the rules on {}'.format(corefs[id])
+        if id in entities:
+            return entities[id]
+        # except:
+        #     pass
         txt = txt[:txt.index(':')]
     return txt
 
