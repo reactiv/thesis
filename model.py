@@ -157,6 +157,9 @@ class Question(Base):
     def all_answers(self):
         return [self.ans1, self.ans2, self.ans3, self.ans4]
 
+    def all_distractors(self):
+        return [a for i, a in enumerate(self.all_answers()) if i != self.correct]
+
     def reify(self):
         if self.num1 is not None:
             # decode the correct answer

@@ -90,7 +90,8 @@ def scrape_fca():
     Session.remove()
 
 def scrape_fitch(files):
-    all_qs = set()
+    all_qs = set([s[0] for s in session.query(Question.body).all()])
+
     for s in files:
         soup = BeautifulSoup(open(s, 'rb'), 'lxml')
         qs = soup.find_all('div', class_='test-question')
@@ -107,16 +108,18 @@ def scrape_fitch(files):
             # print num_opts
             for a in range(1,5):
                 answers.append(q.findAll('div', class_='test-response-passive')[0].find(id='test-response-{}'.format(a)).select('div.test-response-answer')[0].text)
-            # print answers
+            # print answers_1
             correct = 'ABCD'.index(q.find('div', class_='test-answer-actual').select('strong')[0].text)
             # print correct
             question = Question(body=q_text, ans1=answers[0], ans2=answers[1], ans3=answers[2], ans4=answers[3],
                                 num1=num_opts[0], num2=num_opts[1], num3=num_opts[2], num4=num_opts[3], correct=correct)
 
             if q_text in all_qs:
-                print 'DUPLICATE FOUND'
-                print q_text
+                # print 'DUPLICATE FOUND'
+                # print q_text
+                pass
             else:
+                print 'NEW FOUND'
                 session.add(question)
             all_qs.add(q_text)
 
@@ -253,6 +256,6 @@ if __name__ == '__main__':
     # scrape_glossary()
     # fix_glossary_links()
     # scrape_fca()
-    scrape_fitch(['fsma_2_1.htm', 'fsma_2_2.htm'])
+    scrape_fitch(['cobsmed.htm'])
     # scrape_fitch(['assoc1.htm','assoc2.htm','assoc3.htm','assoc4.htm',
     #               'fsma1.htm', 'fsma2.htm', 'fsma3.htm', 'fsma4.htm', 'source4.htm'])

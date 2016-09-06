@@ -50,7 +50,7 @@ def generate_section_set(max_df):
     print('{} Generated'.format(len(ys)))
     return tfidf, ys, cv
 
-# @memory.cache
+@memory.cache
 def generate_clause_set(yfunc, max_df):
     print('Generating Clause Set')
     all_sections = session.query(Section).filter(Section.source_id.isnot(None))
@@ -289,13 +289,13 @@ def get_tfidf(level, extractor):
     return cv, vecs
 
 @memory.cache
-def get_w2v(level, extractor, **kwargs):
+def get_w2v(level, extractor, size=100, sg=1, iter=80, alpha=0.025):
     docs = get_dataset(level, extractor)
     sents = []
     for d in docs:
         sents.extend(re.split(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s', d))
     tok_sents = [tokenise(s) for s in sents]
-    w2v = Word2Vec(tok_sents, **kwargs)
+    w2v = Word2Vec(tok_sents, alpha=alpha, size=size, sg=sg, iter=iter, workers=7, sample=0)
     return w2v, [get_doc_vec(w2v, s) for s in sents]
 
 

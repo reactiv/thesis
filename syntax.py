@@ -199,7 +199,7 @@ def show_tree(treetok):
     cf.mainloop()
 
 def get_refs():
-    with open('ref_all.txt', 'rb') as ref_file:
+    with open('ref_everything.txt', 'rb') as ref_file:
         lines = ref_file.readlines()
         refs = [int(l.split(',')[0]) for l in lines]
         return refs
@@ -208,27 +208,36 @@ def get_refs():
 def check_parsey_output():
     all_parsed = open('out_perf_colon.conll', 'rb').read().decode('ascii', 'ignore').split('\n\n')
     all_sents = []
-    # refs = get_refs()
-    for a in all_parsed:
+    refs = get_refs()
+
+    # source_mask = [2, 3, 4, 5, 6, 9, 11, 13, 15, 16, 17, 21, 22, 24, 25, 26, 28, 29, 30, 32, 33, 34, 36, 37, 38, 40, 45, 47, 50]
+    statement_source_dict = dict(session.query(Statement.id, Section.source_id).join(RawClause).join(Section))
+    for i, a in enumerate(all_parsed):
         # try:
-        d, sent_text = to_dict(a)
 
-        d.keys()[0]
-        parts = extract_parts(d)
-        wanted = ['nsubj', 'neg', 'aux', 'root']
-        sent_dict = {}
-        sent_dict['pos'] = d.keys()[0].pos
-        sent_dict['text'] = sent_text
-        sent_dict['dict'] = d
-        for p in parts:
-            if p[0] in wanted:
-                sent_dict[p[0]] = p[1]
+        # ref = refs[i]
+        # if int(ref) in statement_source_dict:
+        #     source_id = statement_source_dict[int(ref)]
+        #     if source_id in source_mask:
+            d, sent_text = to_dict(a)
 
-        all_sents.append(sent_dict)
-        # except:
-        #     pass
+            d.keys()[0]
+            parts = extract_parts(d)
+            wanted = ['nsubj', 'neg', 'aux', 'root']
+            sent_dict = {}
+            sent_dict['pos'] = d.keys()[0].pos
+            sent_dict['text'] = sent_text
+            sent_dict['dict'] = d
+            for p in parts:
+                if p[0] in wanted:
+                    sent_dict[p[0]] = p[1]
+
+            all_sents.append(sent_dict)
+                # except:
+                #     pass
 
     df = pd.DataFrame.from_dict(all_sents)
+    print(len(df))
     # df['refs'] = refs
     return df
         # graph = DependencyGraph(a)
@@ -1065,16 +1074,16 @@ if __name__ == '__main__':
         print(tr(d))
         # rules_s_o_v(d, True)
         # get_numeric(d)
-        get_triples_nested(d, d.keys()[0])
-        # new_qs = rules_s_o_v(d, False)
-        # if new_qs is not None:
-        #     for n in new_qs:
-        #         # print n
-        #         pass
-        #         # qs.append((ref,) + n)
+        # get_triples_nested(d, d.keys()[0])
+        new_qs = rules_s_o_v(d, False)
+        # new_qs = chunk_approach(d)
+        if new_qs is not None:
+            for n in new_qs:
+                qs.append(n)
+                # qs.append((ref,) + n)
         # else:
         #     errs += 1
         # print(len(qs))
         # print(errs)
-    # pd.DataFrame(qs).to_csv('generated_qs.csv')
+    pd.DataFrame(qs).to_csv('generated_perf_sov.csv')
 

@@ -249,14 +249,14 @@ def reference(group):
 def entity_and_reference(group):
     txt = group.group(1)
     if ':' in txt:
-        # try:
-        id = int(txt[txt.index(':')+1:])
-        if id in corefs:
-            return 'the rules on {}'.format(corefs[id])
-        if id in entities:
-            return entities[id]
-        # except:
-        #     pass
+        try:
+            id = int(txt[txt.index(':')+1:])
+            if id in corefs:
+                return 'the rules on {}'.format(corefs[id])
+            if id in entities:
+                return entities[id]
+        except:
+            pass
         txt = txt[:txt.index(':')]
     return txt
 
@@ -456,7 +456,7 @@ def replace_entities(string, max_length):
     return string
 
 if __name__ == '__main__':
-    replace_entities(u'Alternative investment fund manager directive', 4)
+    # replace_entities(u'Alternative investment fund manager directive', 4)
     entity_questions()
     # add_coref_all()
     # clause = session.query(RawClause).filter(RawClause.id == 33355).first()

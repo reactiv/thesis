@@ -28,11 +28,14 @@ def nn_investigate(n_neighbours, tfidf, X, y, questions):
     nn.fit(X)
     correct = 0
     total = float(questions.count())
+    clause_ids = []
     for q in questions:
         searches = [q.body + '. ' + a for a in q.all_answers()]
         vecs = tfidf.transform(searches)
         neigh = nn.kneighbors(vecs, return_distance=True)
         dist = neigh[0].mean(axis=1)
+        clause_id = y[neigh[1][0]]
+        clause_ids.append(clause_id)
         chosen = dist.argmin()
         # clause_ids = y[neigh[1]].ravel()
         # nearest_correct = session.query(RawClause.cleaned).filter(RawClause.id==clause_ids[q.correct]).first()
@@ -46,6 +49,8 @@ def nn_investigate(n_neighbours, tfidf, X, y, questions):
 
         if chosen == q.correct:
             correct += 1
+
+
     print(correct, total, correct/total)
 
 def nn_test_w2v(n_neighbours, w2v, docs, questions):
@@ -258,7 +263,7 @@ def get_w2v(size, a, iters):
     return w2v
 
 if __name__ == '__main__':
-    questions = session.query(Question).filter((Question.type == None))
+    questions = session.query(Question).filter((Question.type.in_([1,2])))
                                                # (Question.related_clause.isnot(None))&
                                                # (Question.related_clause != 54488))
         # .order_by(Question.id.desc())
@@ -266,7 +271,7 @@ if __name__ == '__main__':
     X, y, tfidf = generate_clause_set(get_clause_id, 1)
     # X, docs, tfidf = generate_statement_set()
     # for i in range(1,30,2):
-    #     nn_investigate(i, tfidf, X, docs, questions)
+    nn_investigate(1, tfidf, X, y, questions)
     # nn_test(1, tfidf, X, questions)
     # tfidf_discrim_test(tfidf, X, questions)
     # for i in range(1,7):

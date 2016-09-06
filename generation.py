@@ -1,8 +1,11 @@
+import pickle
+from random import seed
 from nltk import AlignedSent, IBMModel2
 import pandas as pd
 from scipy.sparse import vstack, hstack
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, Perceptron
 from sklearn.metrics import roc_auc_score
 from cleaning import entity_and_reference, condense_ref
 from inference import get_w2v
@@ -77,10 +80,10 @@ def questions_checker(output_file_name, for_parser):
 
 def statement_checker(output_file_name, for_parser, extractor):
     nlp = spacy.load('en')
-    statements = session.query(StatementPart, RawClause, Section).join(RawClause).join(Section).filter((StatementPart.parent_id.is_(None))
+    statements = session.query(StatementPart, RawClause, Section).join(RawClause).join(Section).filter((StatementPart.parent_id.is_(None)))
                                                                          # & (Section.docpath.like('COBS%'))
-                                                                         & (Section.id == 2926) # .in_(range(2961, 2969))) #
-                                                                         & (RawClause.content_html.notilike('%<table%'))).order_by(StatementPart.id)
+                                                                         # & (Section.id == 2926) # .in_(range(2961, 2969))) #
+                                                                         # & (RawClause.content_html.notilike('%<table%'))).order_by(StatementPart.id)
     with open(output_file_name, 'wb') as file_with_reference:
         with open(for_parser, 'wb') as file_for_parser:
             lines = []
@@ -174,7 +177,7 @@ def get_test_vecs(tfidf, questions, concatenated):
     y = np.concatenate(y)
     return X, y
 
-@memory.cache
+# @memory.cache
 def tfidf_test(tfidf, train_x, train_y, questions, concatenated):
     correct = 0
     # total = float(questions.count())
@@ -202,28 +205,30 @@ def tfidf_test(tfidf, train_x, train_y, questions, concatenated):
     X = vstack(X)
     y = np.concatenate(y)
     print('Training')
-    # lr = LogisticRegressionCV(scoring='roc_auc')
-    # lr = LogisticRegression()
+    lr = RandomForestClassifier(n_estimators=100)
+    # lr = ExtraTreesClassifier(1000)
 
     # lr.fit(train_x, train_y)
     # print('Scoring')
 
 
-    lr = ExtraTreesClassifier(n_estimators=1000, n_jobs=-1, verbose=3)
+    # lr = ExtraTreesClassifier(n_estimators=1000, n_jobs=8, verbose=3)
+    # lr = LogisticRegressionCV()
+    # lr = Perceptron('l1', n_jobs=-1)
 
     lr.fit(train_x, train_y)
 
-    print('Scoring')
-    print(roc_auc_score(train_y, lr.predict_proba(train_x)[:,1]))
+    # print('Scoring')
+    # print(roc_auc_score(train_y, lr.predict_proba(train_x)[:,1]))
     proba = lr.predict_proba(X)
-    print(proba)
+    # print(proba)
     pred_ans = proba[:,1].reshape(len(questions),4).argmax(axis=1)
-    print pred_ans
-    print true_ans
+    # print pred_ans
+    # print true_ans
     # print(y)
     # print(roc_auc_score(y, lr.predict_proba(X)[:,1]))
     print((pred_ans == true_ans).mean())
-    return lr
+    return (pred_ans == true_ans).mean()
 
 def get_vector(tfidf, q, a, concatenate):
     if concatenate:
@@ -239,38 +244,42 @@ def get_vecs(no_wrong, qs, answers, concatenated, header_context):
     all_vecs = []
 
     tf = []
+    allqs = []
+    allas = []
     for idx, rows in qs.iterrows():
         try:
-            add_cont = 'Regarding {}, '.format(context.ix[rows.ix[1]]['header'].lower().encode('ascii', 'ignore'))
-            q = rows.ix[2]
+            # add_cont = 'Regarding {}, '.format(context.ix[rows.ix[1]]['header'].lower().encode('ascii', 'ignore'))
+            q = rows.ix[1]
             # if len(q) < 100:
-            if header_context:
-                q = add_cont + q
-            a = rows.ix[3]
-            vec = get_vector(tfidf, q, a, concatenated)
-
+            # if header_context:
+            #     q = add_cont + q
+            a = rows.ix[2]
+            allqs.append(q)
+            allas.append(a)
             rand_indexs = np.random.permutation(len(answers))[:no_wrong]
             rnds = answers.as_matrix()[rand_indexs]
-            all_vecs.append(vec)
             tf.append(1)
 
             for i in range(no_wrong):
-
-                all_vecs.append(get_vector(tfidf, q, rnds[i], concatenated))
+                allqs.append(q)
+                allas.append(rnds[i])
                 tf.append(0)
 
         except:
             pass
 
-    X = vstack(all_vecs)
+    q_vecs = tfidf.transform(allqs)
+    a_vecs = tfidf.transform(allas)
+
+    X = hstack([q_vecs, a_vecs])
     y = np.array(tf)
 
 
     return X, y
 
 def get_vecs_no_gen(qs, concatenated, header_context):
-    q_vecs = tfidf.transform(qs['1'].as_matrix())
-    a_vecs = tfidf.transform(qs['2'].as_matrix())
+    q_vecs = tfidf.transform(qs['0'].as_matrix())
+    a_vecs = tfidf.transform(qs['1'].as_matrix())
     X = hstack((q_vecs, a_vecs))
     y = qs['3']
     return X, y
@@ -308,11 +317,12 @@ if __name__ == '__main__':
     # statement_checker('ref_perf.txt', 'to_parser_perf.txt', condense_ref)
     # statement_checker('ref_suitability.txt', 'to_parser_suitability.txt', condense_ref)
     # statement_checker('ref_colon.txt', 'to_parser_colon.txt', condense_ref)
-    statement_checker('ref_perf_colon.txt', 'to_parser_perf_colon.txt', condense_ref)
+    # statement_checker('ref_perf_colon.txt', 'to_parser_perf_colon.txt', condense_ref)
+    # statement_checker('ref_everything.txt', 'to_parser_everything.txt', condense_ref)
 
 
     # context = load_additional_context()
-    # _, _, tfidf = generate_clause_set(get_clause_id, 1)
+    _, _, tfidf = generate_clause_set(get_clause_id, 1)
     #
     # q = "A firm must ensure that information that contains an indication of past performance of relevant business , a relevant investment or a financial index , satisfies the following conditions : the information includes appropriate performance information which covers at least the immediately preceding how many years , or the whole period for which the investment has been offered , the financial index has been established , or the service has been provided if less than five years , or such longer period as the firm may decide , and in every case that performance information must be based on and show complete 12-month periods ?"
     # t_a = "at least the immediately preceding five years , or the whole period for which the investment has been offered"
@@ -326,7 +336,7 @@ if __name__ == '__main__':
     # t3_a = 'the following conditions : the reference period and the source of information are clearly stated'
     # f3_a = 'the following conditions : the reference period and the source of information are unclearly stated'
     #
-    # # tfidf.fit_transform([q + ' ' + t_a, q + ' ' + f_a,
+    # tfidf.fit_transform([q + ' ' + t_a, q + ' ' + f_a,
     # #                              q2 + ' ' + t2_a, q2 + ' ' + f2_a,
     # #                              q3 + ' ' + t3_a, q3 + ' ' + f3_a])
     # #
@@ -334,26 +344,36 @@ if __name__ == '__main__':
     #
     #
     #
-    # qs = pd.read_csv('generated_qs.csv')
-    # # for a in qs['2']:
-    # #     print(a)
-    # # qs = qs[(qs['2'].str.split().apply(len) > 1)]
-    # tfidf.fit_transform((qs['1'] + ' ' + qs['2']).as_matrix())
-    #
-    # answers = qs['2'].fillna('')
-    # for no_wrong in [1]:
-    #     # X, y = get_vecs(no_wrong, qs, answers, concatenated=True, header_context=False)
-    #     X, y = get_vecs_no_gen(qs, concatenated=True, header_context=False)
-    #     # X, y = sanity_check(no_wrong, qs, answers, concatenated=True, header_context=False)
-    #     # questions = session.query(Question).filter((Question.id.in_([695, 724, 659, 413, 332])))
-    #     # tfidf_test(tfidf, X, y, questions, True)
-    #     questions = session.query(Question).filter((Question.type.is_(None))).all()
-    #     et = tfidf_test(tfidf, X, y, questions, True)
-    #     X_test, y_test = get_test_vecs(tfidf, questions, True)
-    #     proba = et.predict_proba(X_test)
-    #     pass
-    # # statement_checker('ref_all.txt', 'to_parser_all.txt')
-    # # questions_checker('q_ref.txt', 'q_to_parser.txt')
-    # # question_cluster()
-    # # ibm = get_ibm_model3()
-    # # semi_sup()
+
+    factor = 'suitability'
+    qs = pd.read_csv('generated_perf.csv')
+    # for a in qs['2']:
+    #     print(a)
+    # qs = qs[(qs['2'].str.split().apply(len) > 1)]
+    tfidf.fit(qs['0'] + ' ' + qs['1'])
+    # tfidf.transform((qs['0'] + ' ' + qs['1']).as_matrix())
+    seed(0)
+    res = []
+    for i in range(100):
+        answers_1 = qs['1'].fillna('')
+        for no_wrong in [4]:
+            X, y = get_vecs(no_wrong, qs, answers_1, concatenated=True, header_context=False)
+            # X, y = get_vecs_no_gen(qs, concatenated=True, header_context=False)
+            # X, y = sanity_check(no_wrong, qs, answers_1, concatenated=True, header_context=False)
+            # questions = session.query(Question).filter((Question.id.in_([695, 724, 659, 413, 332])))
+            # tfidf_test(tfidf, X, y, questions, True)
+            questions = session.query(Question).filter(Question.type.in_([0,1])).all()
+            questions = session.query(Question).filter(Question.body.ilike('%suitability%')).all()
+            et = tfidf_test(tfidf, X, y, questions, True)
+            res.append(et)
+            # et = pickle.load(open('et.p', 'rb'))
+            # X_test, y_test = get_test_vecs(tfidf, questions, True)
+            # proba = et.predict_proba(X_test)
+            pass
+
+    print np.mean(res)
+    # statement_checker('ref_all.txt', 'to_parser_all.txt')
+    # questions_checker('q_ref.txt', 'q_to_parser.txt')
+    # question_cluster()
+    # ibm = get_ibm_model3()
+    # semi_sup()
